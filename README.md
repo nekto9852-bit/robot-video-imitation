@@ -48,6 +48,7 @@
 ├── models/arm_6dof.xml       ← MJCF: канон кинематики и position-лимитов
 ├── config/limits.yaml        ← канон vel/acc/watchdog
 ├── tests/                    ← 52 теста (7 файлов)
+├── ros2_ws/                  ← черновики ROS 2-слоя (trajectory_codec, bridge_node, urdf, limits-генератор)
 ├── workflow/n8n-training-pipeline.json  ← экспорт живого workflow (25 узлов)
 ├── docs/README_n8n.md        ← гайд по n8n-части
 ├── docs/architecture.png

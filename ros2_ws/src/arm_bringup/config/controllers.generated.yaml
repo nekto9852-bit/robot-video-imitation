@@ -1,0 +1,64 @@
+meta:
+  generated_from:
+    mjcf: C:\Users\User\.zcode\workspace\draft-016c56b0-56e5-4b54-b4cb-d14034e152a1\models\arm_6dof.xml
+    limits: C:\Users\User\.zcode\workspace\draft-016c56b0-56e5-4b54-b4cb-d14034e152a1\config\limits.yaml
+    watchdog_timeout_ms: 750
+  note: генерат gen_limits_params.py — не редактировать руками
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+    - j1_base_yaw
+    - j2_shoulder_pitch
+    - j3_shoulder_roll
+    - j4_elbow
+    - j5_wrist_pitch
+    - j6_wrist_roll
+    joint_limits:
+      j1_base_yaw:
+        has_position_limits: true
+        min_position: -2.96706
+        max_position: 2.96706
+        has_velocity_limits: true
+        max_velocity: 2.0
+        has_acceleration_limits: true
+        max_acceleration: 25.0
+      j2_shoulder_pitch:
+        has_position_limits: true
+        min_position: -2.96706
+        max_position: 2.96706
+        has_velocity_limits: true
+        max_velocity: 2.0
+        has_acceleration_limits: true
+        max_acceleration: 25.0
+      j3_shoulder_roll:
+        has_position_limits: true
+        min_position: -1.91986
+        max_position: 1.91986
+        has_velocity_limits: true
+        max_velocity: 2.0
+        has_acceleration_limits: true
+        max_acceleration: 25.0
+      j4_elbow:
+        has_position_limits: true
+        min_position: -2.61799
+        max_position: 2.61799
+        has_velocity_limits: true
+        max_velocity: 2.0
+        has_acceleration_limits: true
+        max_acceleration: 25.0
+      j5_wrist_pitch:
+        has_position_limits: true
+        min_position: -1.91986
+        max_position: 1.91986
+        has_velocity_limits: true
+        max_velocity: 2.0
+        has_acceleration_limits: true
+        max_acceleration: 25.0
+      j6_wrist_roll:
+        has_position_limits: true
+        min_position: -3.14159
+        max_position: 3.14159
+        has_velocity_limits: true
+        max_velocity: 2.0
+        has_acceleration_limits: true
+        max_acceleration: 25.0
