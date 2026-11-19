@@ -1,0 +1,1671 @@
+{
+  "id": "Idigy3f9JdBGkF02",
+  "name": "Training pipeline: video -> 50 trajectories -> self-correction -> deploy",
+  "description": null,
+  "active": true,
+  "activeVersionId": "df6f5410-8627-4dc4-b9b4-505d6537a787",
+  "createdAt": "2026-11-15T17:12:53.955Z",
+  "updatedAt": "2026-11-15T17:51:52.000Z",
+  "isArchived": false,
+  "versionId": "df6f5410-8627-4dc4-b9b4-505d6537a787",
+  "versionCounter": 2,
+  "sourceWorkflowId": null,
+  "triggerCount": 1,
+  "nodes": [
+    {
+      "id": "c0a80101-0000-4000-8000-000000000001",
+      "name": "Webhook: POST /train",
+      "webhookId": "5f1c2a3e-8b4d-4f7e-9a60-1d2e3f4a5b6c",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1300,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "train",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000002",
+      "name": "Init Job (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1060,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/init_job",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000003",
+      "name": "Fetch config.yaml (worker)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -820,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/config",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000004",
+      "name": "Worker: video to 50 trajectories",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        -580,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/process_video",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job_id: $('Init Job (HTTP)').first().json.job_id, iteration: $('Init Job (HTTP)').first().json.iteration, video_url: $('Webhook: POST /train').first().json.body.video_url, video_base64: $('Webhook: POST /train').first().json.body.video_base64, params: $('Webhook: POST /train').first().json.body.params }) }}",
+        "options": {
+          "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000005",
+      "name": "Split Out Episodes",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -340,
+        0
+      ],
+      "parameters": {
+        "fieldToSplitOut": "episodes",
+        "options": {
+          "include": "noOtherFields"
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000006",
+      "name": "Split In Batches (10)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -100,
+        0
+      ],
+      "parameters": {
+        "batchSize": 10,
+        "options": {
+          "reset": "={{ $json.new_iteration === true }}"
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000007",
+      "name": "MuJoCo: POST /simulate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput",
+      "position": [
+        140,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MUJOCO_WORKER_URL }}/simulate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ episode: { job_id: $json.job_id, iteration: $json.iteration, trajectory_id: $json.trajectory_id, episode_id: $json.episode_id, attempt_no: $json.attempt_no, angles_deg: $json.angles_deg, thresholds: $json.thresholds, training_cfg: $json.training_cfg } }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000008",
+      "name": "Check Episode Result (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "position": [
+        380,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/check_episode",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000009",
+      "name": "Retry episode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        620,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1-retry-status",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "failed_retryable",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c2-retry-attempt",
+              "leftValue": "={{ $json.attempt_no }}",
+              "rightValue": "={{ $json.training_cfg.max_episode_retries }}",
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000010",
+      "name": "Aggregate Episodes",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        140,
+        -260
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "data",
+        "options": {}
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000011",
+      "name": "Aggregate Iteration (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        380,
+        -260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/aggregate_iteration",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ items: $json.data }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000012",
+      "name": "Passed or max iterations?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        620,
+        -260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1-all-passed",
+              "leftValue": "={{ $json.all_passed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "c2-max-iter",
+              "leftValue": "={{ $json.iteration }}",
+              "rightValue": "={{ $json.training_cfg.max_iterations }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000013",
+      "name": "Actually passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        860,
+        -260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1-passed",
+              "leftValue": "={{ $json.all_passed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000014",
+      "name": "Finetune: POST /finetune",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "position": [
+        380,
+        -520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/finetune",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job_id: $json.job_id, iteration: $json.iteration, failed_episode_ids: $json.finetune_request.failed_episode_ids, failures: $json.finetune_request.failures, good_trajectories: $json.finetune_request.good_trajectories }) }}",
+        "options": {
+          "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000015",
+      "name": "Split Out New Episodes",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        620,
+        -520
+      ],
+      "parameters": {
+        "fieldToSplitOut": "episodes",
+        "options": {
+          "include": "noOtherFields"
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000016",
+      "name": "Deploy: POST /deploy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        1100,
+        -260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ROS2_BRIDGE_URL }}/deploy",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ job_id: $json.job_id, iteration: $json.iteration, summary: { mean_pose_error_deg: $json.mean_pose_error_deg, total_collisions: $json.total_collisions, n_passed: $json.n_passed, n_failed: $json.n_failed }, trajectories_count: $json.episodes.length, thresholds: $json.thresholds }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000017",
+      "name": "Build Deploy Result (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        -260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/build_deploy_result",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000018",
+      "name": "Build Fail Result (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/build_fail_result",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000020",
+      "name": "Log Iteration (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1580,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/log_iteration",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000019",
+      "name": "Notify (Telegram)",
+      "disabled": true,
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1820,
+        260
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.notification_text }}",
+        "additionalFields": {}
+      },
+      "webhookId": "bea56700-4dc0-4d2b-bd90-e8b859f25902"
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000021",
+      "name": "On Workflow Error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1300,
+        520
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000022",
+      "name": "Format Error (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1060,
+        520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TRAINING_WORKER_URL }}/format_error",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000023",
+      "name": "Sticky: Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1320,
+        -880
+      ],
+      "parameters": {
+        "content": "## Training pipeline: video -> 50 trajectories -> self-correction -> deploy\n\n**POST /train** принимает `video_url` (или `video_base64`) + `params`.\n\n1. Worker (`pose_to_trajectories.py`) -> 50 траекторий + готовые episodes\n2. Пачки по 10 эпизодов -> MuJoCo `/simulate`\n3. Пороги (pose_error / collisions) — из `config.yaml` воркера (`GET /config`)\n4. Провал -> `/finetune` -> новая итерация (max `training.max_iterations`)\n5. Успех -> ROS2 `/deploy` -> `/log_iteration` (JSONL-журнал у воркера)\n   -> Telegram (disabled до назначения кред — включить в UI)\n\n**Без Python в n8n**: вся логика (job_id, пороги, агрегация, тексты) — в воркере;\nв n8n только HTTP-ноды + стандартные Split Out / Aggregate (fan-out/fan-in).\n\nenv: `TRAINING_WORKER_URL`, `MUJOCO_WORKER_URL`, `ROS2_BRIDGE_URL`, `TELEGRAM_CHAT_ID`",
+        "height": 340,
+        "width": 980,
+        "color": 4
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000024",
+      "name": "Sticky: Loop trick",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        200
+      ],
+      "parameters": {
+        "content": "### Почему цикл перезапускается\n\nSplit In Batches v3 не стартует новый цикл по новым данным (node context персистентен в рамках исполнения).\n\nРешение: `options.reset` задан **выражением**\n`={{ $json.new_iteration === true }}`:\n- новая итерация (после /finetune) -> reset=true -> свежий цикл;\n- возврат батча из тела -> reset=false -> обычное продолжение.",
+        "height": 260,
+        "width": 400,
+        "color": 5
+      }
+    },
+    {
+      "id": "c0a80101-0000-4000-8000-000000000025",
+      "name": "Sticky: Error handling",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1320,
+        700
+      ],
+      "parameters": {
+        "content": "### Ошибки (всё без Code nodes — логика в воркере)\n\n- NaN/сбой MuJoCo: HTTP /simulate `onError: continueRegularOutput` -> `/check_episode` помечает эпизод `failed_retryable` -> ретрай того же `episode_id` (до `training.max_episode_retries`), попытки видны в журнале.\n- Журнал: `/log_iteration` -> `logs/training_iterations.jsonl` у воркера (Log стоит ДО Notify — Telegram затирает item своим ответом).\n- Notify (Telegram) disabled до назначения кред telegramApi — включить в UI;\nбез него прогон проходит полностью без ошибок.\n- Падение воркфлоу целиком: ветка **On Workflow Error** -> `/format_error`. Settings -> Error Workflow -> этот же воркфлоу.",
+        "height": 280,
+        "width": 620,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: POST /train": {
+      "main": [
+        [
+          {
+            "node": "Init Job (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Job (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Fetch config.yaml (worker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch config.yaml (worker)": {
+      "main": [
+        [
+          {
+            "node": "Worker: video to 50 trajectories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Worker: video to 50 trajectories": {
+      "main": [
+        [
+          {
+            "node": "Split Out Episodes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Episodes": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches (10)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches (10)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Episodes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "MuJoCo: POST /simulate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MuJoCo: POST /simulate": {
+      "main": [
+        [
+          {
+            "node": "Check Episode Result (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Episode Result (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Retry episode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry episode?": {
+      "main": [
+        [
+          {
+            "node": "MuJoCo: POST /simulate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split In Batches (10)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Episodes": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Iteration (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Iteration (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Passed or max iterations?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Passed or max iterations?": {
+      "main": [
+        [
+          {
+            "node": "Actually passed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finetune: POST /finetune",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actually passed?": {
+      "main": [
+        [
+          {
+            "node": "Deploy: POST /deploy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Fail Result (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finetune: POST /finetune": {
+      "main": [
+        [
+          {
+            "node": "Split Out New Episodes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out New Episodes": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches (10)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deploy: POST /deploy": {
+      "main": [
+        [
+          {
+            "node": "Build Deploy Result (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Deploy Result (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Log Iteration (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Fail Result (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Log Iteration (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Iteration (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Notify (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On Workflow Error": {
+      "main": [
+        [
+          {
+            "node": "Format Error (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error (HTTP)": {
+      "main": [
+        [
+          {
+            "node": "Log Iteration (HTTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodeGroups": [],
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {
+    "Webhook: POST /train": [
+      {
+        "json": {
+          "headers": {
+            "content-type": "application/json"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "video_url": "demo://",
+            "params": {
+              "seed": 7,
+              "n_trajectories": 50,
+              "side": "auto"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "meta": null,
+  "tags": [
+    {
+      "id": "2mQ2s36dFekzmeli",
+      "name": "training",
+      "createdAt": "2026-11-15T15:56:38.893Z",
+      "updatedAt": "2026-11-15T15:56:38.893Z"
+    },
+    {
+      "id": "5eu1IhK3DDc4vIgX",
+      "name": "mujoco",
+      "createdAt": "2026-11-15T15:56:38.896Z",
+      "updatedAt": "2026-11-15T15:56:38.896Z"
+    },
+    {
+      "id": "yqKQEFHocbkwl7vR",
+      "name": "robotics",
+      "createdAt": "2026-11-15T15:56:38.895Z",
+      "updatedAt": "2026-11-15T15:56:38.895Z"
+    }
+  ],
+  "shared": [
+    {
+      "role": "workflow:owner",
+      "workflowId": "Idigy3f9JdBGkF02",
+      "projectId": "W1fPZPxfGHSt61UC",
+      "project": {
+        "id": "W1fPZPxfGHSt61UC",
+        "name": "nekto9852-bit <nekto9852@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "85205c6a-4ee6-4a28-be80-73a4ae6dcf15",
+        "createdAt": "2026-10-19T18:00:28.867Z",
+        "updatedAt": "2026-11-11T15:51:17.504Z"
+      },
+      "createdAt": "2026-11-15T17:12:53.959Z",
+      "updatedAt": "2026-11-15T17:12:53.959Z"
+    }
+  ],
+  "activeVersion": {
+    "versionId": "df6f5410-8627-4dc4-b9b4-505d6537a787",
+    "workflowId": "Idigy3f9JdBGkF02",
+    "nodes": [
+      {
+        "id": "c0a80101-0000-4000-8000-000000000001",
+        "name": "Webhook: POST /train",
+        "webhookId": "5f1c2a3e-8b4d-4f7e-9a60-1d2e3f4a5b6c",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1300,
+          0
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "train",
+          "responseMode": "onReceived",
+          "options": {}
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000002",
+        "name": "Init Job (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1060,
+          0
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/init_job",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000003",
+        "name": "Fetch config.yaml (worker)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -820,
+          0
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/config",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000004",
+        "name": "Worker: video to 50 trajectories",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 3000,
+        "position": [
+          -580,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/process_video",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ job_id: $('Init Job (HTTP)').first().json.job_id, iteration: $('Init Job (HTTP)').first().json.iteration, video_url: $('Webhook: POST /train').first().json.body.video_url, video_base64: $('Webhook: POST /train').first().json.body.video_base64, params: $('Webhook: POST /train').first().json.body.params }) }}",
+          "options": {
+            "timeout": 600000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000005",
+        "name": "Split Out Episodes",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          -340,
+          0
+        ],
+        "parameters": {
+          "fieldToSplitOut": "episodes",
+          "options": {
+            "include": "noOtherFields"
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000006",
+        "name": "Split In Batches (10)",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          -100,
+          0
+        ],
+        "parameters": {
+          "batchSize": 10,
+          "options": {
+            "reset": "={{ $json.new_iteration === true }}"
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000007",
+        "name": "MuJoCo: POST /simulate",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1000,
+        "onError": "continueRegularOutput",
+        "position": [
+          140,
+          260
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.MUJOCO_WORKER_URL }}/simulate",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ episode: { job_id: $json.job_id, iteration: $json.iteration, trajectory_id: $json.trajectory_id, episode_id: $json.episode_id, attempt_no: $json.attempt_no, angles_deg: $json.angles_deg, thresholds: $json.thresholds, training_cfg: $json.training_cfg } }) }}",
+          "options": {
+            "timeout": 120000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000008",
+        "name": "Check Episode Result (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1000,
+        "position": [
+          380,
+          260
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/check_episode",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000009",
+        "name": "Retry episode?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          620,
+          260
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose"
+            },
+            "conditions": [
+              {
+                "id": "c1-retry-status",
+                "leftValue": "={{ $json.status }}",
+                "rightValue": "failed_retryable",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              },
+              {
+                "id": "c2-retry-attempt",
+                "leftValue": "={{ $json.attempt_no }}",
+                "rightValue": "={{ $json.training_cfg.max_episode_retries }}",
+                "operator": {
+                  "type": "number",
+                  "operation": "lte"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000010",
+        "name": "Aggregate Episodes",
+        "type": "n8n-nodes-base.aggregate",
+        "typeVersion": 1,
+        "position": [
+          140,
+          -260
+        ],
+        "parameters": {
+          "aggregate": "aggregateAllItemData",
+          "destinationFieldName": "data",
+          "options": {}
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000011",
+        "name": "Aggregate Iteration (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          380,
+          -260
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/aggregate_iteration",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ items: $json.data }) }}",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000012",
+        "name": "Passed or max iterations?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          620,
+          -260
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose"
+            },
+            "conditions": [
+              {
+                "id": "c1-all-passed",
+                "leftValue": "={{ $json.all_passed }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "c2-max-iter",
+                "leftValue": "={{ $json.iteration }}",
+                "rightValue": "={{ $json.training_cfg.max_iterations }}",
+                "operator": {
+                  "type": "number",
+                  "operation": "gte"
+                }
+              }
+            ],
+            "combinator": "or"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000013",
+        "name": "Actually passed?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          860,
+          -260
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose"
+            },
+            "conditions": [
+              {
+                "id": "c1-passed",
+                "leftValue": "={{ $json.all_passed }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000014",
+        "name": "Finetune: POST /finetune",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 5000,
+        "position": [
+          380,
+          -520
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/finetune",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ job_id: $json.job_id, iteration: $json.iteration, failed_episode_ids: $json.finetune_request.failed_episode_ids, failures: $json.finetune_request.failures, good_trajectories: $json.finetune_request.good_trajectories }) }}",
+          "options": {
+            "timeout": 600000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000015",
+        "name": "Split Out New Episodes",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          620,
+          -520
+        ],
+        "parameters": {
+          "fieldToSplitOut": "episodes",
+          "options": {
+            "include": "noOtherFields"
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000016",
+        "name": "Deploy: POST /deploy",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 5000,
+        "position": [
+          1100,
+          -260
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.ROS2_BRIDGE_URL }}/deploy",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ job_id: $json.job_id, iteration: $json.iteration, summary: { mean_pose_error_deg: $json.mean_pose_error_deg, total_collisions: $json.total_collisions, n_passed: $json.n_passed, n_failed: $json.n_failed }, trajectories_count: $json.episodes.length, thresholds: $json.thresholds }) }}",
+          "options": {
+            "timeout": 120000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000017",
+        "name": "Build Deploy Result (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1340,
+          -260
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/build_deploy_result",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000018",
+        "name": "Build Fail Result (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1100,
+          -520
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/build_fail_result",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000020",
+        "name": "Log Iteration (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "onError": "continueRegularOutput",
+        "position": [
+          1580,
+          260
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/log_iteration",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000019",
+        "name": "Notify (Telegram)",
+        "disabled": true,
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "onError": "continueRegularOutput",
+        "position": [
+          1820,
+          260
+        ],
+        "parameters": {
+          "resource": "message",
+          "operation": "sendMessage",
+          "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+          "text": "={{ $json.notification_text }}",
+          "additionalFields": {}
+        },
+        "webhookId": "bea56700-4dc0-4d2b-bd90-e8b859f25902"
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000021",
+        "name": "On Workflow Error",
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          -1300,
+          520
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000022",
+        "name": "Format Error (HTTP)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1060,
+          520
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TRAINING_WORKER_URL }}/format_error",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000023",
+        "name": "Sticky: Overview",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -1320,
+          -880
+        ],
+        "parameters": {
+          "content": "## Training pipeline: video -> 50 trajectories -> self-correction -> deploy\n\n**POST /train** принимает `video_url` (или `video_base64`) + `params`.\n\n1. Worker (`pose_to_trajectories.py`) -> 50 траекторий + готовые episodes\n2. Пачки по 10 эпизодов -> MuJoCo `/simulate`\n3. Пороги (pose_error / collisions) — из `config.yaml` воркера (`GET /config`)\n4. Провал -> `/finetune` -> новая итерация (max `training.max_iterations`)\n5. Успех -> ROS2 `/deploy` -> `/log_iteration` (JSONL-журнал у воркера)\n   -> Telegram (disabled до назначения кред — включить в UI)\n\n**Без Python в n8n**: вся логика (job_id, пороги, агрегация, тексты) — в воркере;\nв n8n только HTTP-ноды + стандартные Split Out / Aggregate (fan-out/fan-in).\n\nenv: `TRAINING_WORKER_URL`, `MUJOCO_WORKER_URL`, `ROS2_BRIDGE_URL`, `TELEGRAM_CHAT_ID`",
+          "height": 340,
+          "width": 980,
+          "color": 4
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000024",
+        "name": "Sticky: Loop trick",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -360,
+          200
+        ],
+        "parameters": {
+          "content": "### Почему цикл перезапускается\n\nSplit In Batches v3 не стартует новый цикл по новым данным (node context персистентен в рамках исполнения).\n\nРешение: `options.reset` задан **выражением**\n`={{ $json.new_iteration === true }}`:\n- новая итерация (после /finetune) -> reset=true -> свежий цикл;\n- возврат батча из тела -> reset=false -> обычное продолжение.",
+          "height": 260,
+          "width": 400,
+          "color": 5
+        }
+      },
+      {
+        "id": "c0a80101-0000-4000-8000-000000000025",
+        "name": "Sticky: Error handling",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -1320,
+          700
+        ],
+        "parameters": {
+          "content": "### Ошибки (всё без Code nodes — логика в воркере)\n\n- NaN/сбой MuJoCo: HTTP /simulate `onError: continueRegularOutput` -> `/check_episode` помечает эпизод `failed_retryable` -> ретрай того же `episode_id` (до `training.max_episode_retries`), попытки видны в журнале.\n- Журнал: `/log_iteration` -> `logs/training_iterations.jsonl` у воркера (Log стоит ДО Notify — Telegram затирает item своим ответом).\n- Notify (Telegram) disabled до назначения кред telegramApi — включить в UI;\nбез него прогон проходит полностью без ошибок.\n- Падение воркфлоу целиком: ветка **On Workflow Error** -> `/format_error`. Settings -> Error Workflow -> этот же воркфлоу.",
+          "height": 280,
+          "width": 620,
+          "color": 3
+        }
+      }
+    ],
+    "connections": {
+      "Webhook: POST /train": {
+        "main": [
+          [
+            {
+              "node": "Init Job (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Init Job (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Fetch config.yaml (worker)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch config.yaml (worker)": {
+        "main": [
+          [
+            {
+              "node": "Worker: video to 50 trajectories",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Worker: video to 50 trajectories": {
+        "main": [
+          [
+            {
+              "node": "Split Out Episodes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split Out Episodes": {
+        "main": [
+          [
+            {
+              "node": "Split In Batches (10)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split In Batches (10)": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Episodes",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "MuJoCo: POST /simulate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "MuJoCo: POST /simulate": {
+        "main": [
+          [
+            {
+              "node": "Check Episode Result (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check Episode Result (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Retry episode?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Retry episode?": {
+        "main": [
+          [
+            {
+              "node": "MuJoCo: POST /simulate",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Split In Batches (10)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate Episodes": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Iteration (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate Iteration (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Passed or max iterations?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Passed or max iterations?": {
+        "main": [
+          [
+            {
+              "node": "Actually passed?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Finetune: POST /finetune",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Actually passed?": {
+        "main": [
+          [
+            {
+              "node": "Deploy: POST /deploy",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Build Fail Result (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Finetune: POST /finetune": {
+        "main": [
+          [
+            {
+              "node": "Split Out New Episodes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split Out New Episodes": {
+        "main": [
+          [
+            {
+              "node": "Split In Batches (10)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Deploy: POST /deploy": {
+        "main": [
+          [
+            {
+              "node": "Build Deploy Result (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Deploy Result (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Log Iteration (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Fail Result (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Log Iteration (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Iteration (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Notify (Telegram)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "On Workflow Error": {
+        "main": [
+          [
+            {
+              "node": "Format Error (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Error (HTTP)": {
+        "main": [
+          [
+            {
+              "node": "Log Iteration (HTTP)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "nekto9852-bit",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "createdAt": "2026-11-15T17:51:30.337Z",
+    "updatedAt": "2026-11-15T17:51:30.337Z",
+    "workflowPublishHistory": []
+  }
+}

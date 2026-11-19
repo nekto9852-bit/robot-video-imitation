@@ -1,0 +1,65 @@
+# Конфиг пайплайна «видео → 50 траекторий робота».
+# Любая секция может быть переопределена; отсутствующие ключи берутся
+# из встроенных значений по умолчанию (см. DEFAULT_CONFIG в модуле).
+
+robot:
+  # Длины звеньев 6-DOF руки, м (последовательно от базы к инструменту).
+  link_lengths_m: [0.10, 0.16, 0.14, 0.12, 0.08, 0.06]
+  tool_offset_m: 0.04
+  # Лимиты углов сервоприводов, градусы [min, max] для J1..J6.
+  joint_limits_deg:
+    - [-170, 170]   # J1: поворот базы (yaw)
+    - [-170, 170]   # J2: плечо (pitch)
+    - [-110, 110]   # J3: плечо (roll)
+    - [-150, 150]   # J4: локоть
+    - [-110, 110]   # J5: запястье (pitch)
+    - [-180, 180]   # J6: запястье (roll)
+  # Упрощённая проверка самоколлизий: цилиндр «корпуса» вокруг оси базы.
+  collision:
+    enabled: true
+    column_radius_m: 0.07
+    column_height_m: 0.10
+    min_clearance_m: 0.02
+
+retarget:
+  side: auto            # auto | left | right — чья рука ретаргетится
+  damping: 0.05         # демпфирование DLS-IK (больше — устойчивее, сходится медленнее)
+  max_iters: 60
+  tol_m: 0.0001         # допуск по позиции энд-эффектора, м
+  nullspace_gain: 0.05  # притяжение к rest-позе в нуль-пространстве IK
+  rest_pose_deg: [0, 0, 0, -30, 0, 0]
+  min_visibility: 0.5   # ниже — цель держится по предыдущему кадру
+  smoothing_window: 5   # скользящее среднее landmark'ов (кадры)
+  target_scale: 0.98    # цель ограничивается долей досягаемости руки
+  frame:
+    depth_sign: 1.0     # знак оси глубины MediaPipe → ось Y робота
+    mirror_x: false
+
+pose:                   # параметры MediaPipe Pose (только для --video)
+  model_complexity: 1
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+  fps_fallback: 30.0
+  landmarker_model: pose_landmarker_full.task   # для mediapipe >= 1.0 (скачивается автоматически)
+
+augmentation:
+  n_trajectories: 50
+  speed_range: [0.7, 1.3]        # множитель скорости воспроизведения
+  amplitude_range: [0.9, 1.1]    # вариация амплитуды вокруг среднего
+  angle_noise_std_deg: 2.0       # базовое СКО гауссовского шума по углам
+  noise_std_jitter: [0.5, 1.5]   # случайный множитель СКО для разнообразия
+  noise_smooth_window: 3         # сглаживание шума (кадры)
+  seed: 42
+
+thresholds:
+  pose_error_max_deg: 8.0        # валидность: среднее отклонение от референса
+  max_collisions: 0
+
+training:                        # цикл самокоррекции n8n-воркфлоу (воркер + воркфлоу читают отсюда)
+  max_iterations: 5              # максимум итераций finetune → simulate
+  max_episode_retries: 2         # перезапуски эпизода при NaN/сбое MuJoCo (тот же episode_id)
+
+output:
+  format: both                   # json | csv | both
+  dir: output
+  round_decimals: 4

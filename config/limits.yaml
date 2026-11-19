@@ -1,0 +1,38 @@
+# ЕДИНЫЙ ИСТОЧНИК velocity/acceleration/watchdog-параметров.
+# Потребители: CMA-ES (Windows, генерация внутри лимитов), safety validator (C++),
+# joint_trajectory_controller (ros2_control, генерируется gen_limits_params.py).
+#
+# Position-лимиты ЗДЕСЬ — только кросс-чек с MJCF (models/arm_6dof.xml);
+# канон position-лимитов — MJCF (joint range). Тест консистентности
+# tests/test_sources_consistency.py закрепляет равенство.
+#
+# Единицы: velocity_max — рад/с; acceleration_max — рад/с² (конвенция ROS).
+# Воркер конвертирует в градусы для работы с траекториями в градусах.
+
+watchdog_timeout_ms: 750
+
+limits:
+  j1_base_yaw:
+    position: [-2.96706, 2.96706]     # кросс-чек с MJCF range
+    velocity_max: 2.0
+    acceleration_max: 25.0
+  j2_shoulder_pitch:
+    position: [-2.96706, 2.96706]
+    velocity_max: 2.0
+    acceleration_max: 25.0
+  j3_shoulder_roll:
+    position: [-1.91986, 1.91986]
+    velocity_max: 2.0
+    acceleration_max: 25.0
+  j4_elbow:
+    position: [-2.61799, 2.61799]
+    velocity_max: 2.0
+    acceleration_max: 25.0
+  j5_wrist_pitch:
+    position: [-1.91986, 1.91986]
+    velocity_max: 2.0
+    acceleration_max: 25.0
+  j6_wrist_roll:
+    position: [-3.14159, 3.14159]
+    velocity_max: 2.0
+    acceleration_max: 25.0

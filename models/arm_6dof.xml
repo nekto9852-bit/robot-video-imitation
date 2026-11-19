@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  6-DOF training arm (MJCF) — кинематическая копия RobotChain из pose_to_trajectories.py.
+  Оси суставов (в локальных кадрах): yaw базы (z), pitch плеча (y), roll плеча (x),
+  локоть (y), pitch запястья (y), roll запястья (x).
+  Длины звеньев, м: 0.10, 0.16, 0.14, 0.12, 0.08, 0.06 + инструмент 0.04.
+  Лимиты (рад) = robot.joint_limits_deg из config.yaml.
+  Пьедестал-цилиндр (radius 0.07, z 0..0.10) — реальная геометрия "корпуса" для
+  самоколлизий; контакты links↔column считаются коллизиями в /simulate.
+  Позиционные сервоприводы (position, kp/kv): ctrl = целевой угол (рад);
+  /simulate прогоняет траекторию 30 fps с 4 подшагами (сим 120 Гц).
+-->
+<mujoco model="arm6dof_training">
+  <compiler angle="radian"/>
+  <option timestep="0.0083333" gravity="0 0 -9.81" integrator="implicitfast"/>
+  <default>
+    <joint limited="true" damping="2" armature="0.01"/>
+    <geom condim="3" friction="0.6 0.005 0.0001" density="1000"/>
+    <position ctrllimited="true"/>
+  </default>
+  <worldbody>
+    <body name="pedestal" pos="0 0 0">
+      <!-- Корпус ниже плеча: z 0..0.05. link2 начинается с зазором над стойкой,
+           чтобы крепление не «висело» в контакте при малых наклонах. -->
+      <geom name="column" type="cylinder" size="0.07 0.025" pos="0 0 0.025"/>
+      <body name="link1" pos="0 0 0">
+        <joint name="j1_base_yaw" type="hinge" axis="0 0 1" range="-2.96706 2.96706"/>
+        <geom name="g1" type="capsule" fromto="0 0 0 0 0 0.10" size="0.03"/>
+        <body name="link2" pos="0 0 0.10">
+          <joint name="j2_shoulder_pitch" type="hinge" axis="0 1 0" range="-2.96706 2.96706"/>
+          <geom name="g2" type="capsule" fromto="0 0 0.02 0 0 0.16" size="0.028"/>
+          <body name="link3" pos="0 0 0.16">
+            <joint name="j3_shoulder_roll" type="hinge" axis="1 0 0" range="-1.91986 1.91986"/>
+            <geom name="g3" type="capsule" fromto="0 0 0 0 0 0.14" size="0.024"/>
+            <body name="link4" pos="0 0 0.14">
+              <joint name="j4_elbow" type="hinge" axis="0 1 0" range="-2.61799 2.61799"/>
+              <geom name="g4" type="capsule" fromto="0 0 0 0 0 0.12" size="0.022"/>
+              <body name="link5" pos="0 0 0.12">
+                <joint name="j5_wrist_pitch" type="hinge" axis="0 1 0" range="-1.91986 1.91986"/>
+                <geom name="g5" type="capsule" fromto="0 0 0 0 0 0.08" size="0.020"/>
+                <body name="link6" pos="0 0 0.08">
+                  <joint name="j6_wrist_roll" type="hinge" axis="1 0 0" range="-3.14159 3.14159"/>
+                  <geom name="g6" type="capsule" fromto="0 0 0 0 0 0.06" size="0.018"/>
+                  <body name="tool" pos="0 0 0.06">
+                    <geom name="g_tool" type="capsule" fromto="0 0 0 0 0 0.04" size="0.012"/>
+                    <site name="site_tool" pos="0 0 0.04" size="0.008"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <!-- link1 конструктивно проходит сквозь стойку: статический предок не
+       получает auto-exclusion, поэтому исключаем пару явно -->
+  <contact>
+    <exclude body1="pedestal" body2="link1"/>
+  </contact>
+  <actuator>
+    <position name="a1" joint="j1_base_yaw"         kp="300" kv="14" ctrlrange="-2.96706 2.96706"/>
+    <position name="a2" joint="j2_shoulder_pitch"   kp="300" kv="14" ctrlrange="-2.96706 2.96706"/>
+    <position name="a3" joint="j3_shoulder_roll"    kp="250" kv="11" ctrlrange="-1.91986 1.91986"/>
+    <position name="a4" joint="j4_elbow"            kp="200" kv="9"  ctrlrange="-2.61799 2.61799"/>
+    <position name="a5" joint="j5_wrist_pitch"      kp="120" kv="6"  ctrlrange="-1.91986 1.91986"/>
+    <position name="a6" joint="j6_wrist_roll"       kp="80"  kv="4"  ctrlrange="-3.14159 3.14159"/>
+  </actuator>
+</mujoco>
