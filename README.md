@@ -29,7 +29,17 @@
 
 ## Архитектура
 
-![Архитектура](docs/architecture.png)
+```mermaid
+flowchart LR
+    A["Клиент<br/>видео движения"] --> B["Загрузка видео<br/>webhook /train · n8n"]
+    B --> C["MediaPipe Pose<br/>33 keypoints · 30 fps"]
+    C --> D["DLS-IK 6-DOF<br/>ретаргетинг на руку"]
+    D --> E["50 траекторий<br/>аугментации ×50"]
+    E --> F["MuJoCo + CMA-ES<br/>физика · самокоррекция"]
+    F -.->|в разработке| G["ROS 2 Jazzy<br/>WSL2"]
+    G -.->|план v3| H["Робот 6-DOF"]
+    F -.- M(["−37% по физике · 50/50 passed · 52/52 тестов · ~3 минуты"])
+```
 
 1. **Из видео — 50 траекторий**: Видео → MediaPipe Pose → DLS-IK 6-DOF → 50 аугментаций
 2. **Симуляция и самокоррекция**: n8n батчит по 10 → MuJoCo `/simulate` → `/check_episode` → не пройден → CMA-ES `/finetune` → повтор итерации; пройден → `/deploy` (заглушка)
@@ -51,7 +61,6 @@
 ├── ros2_ws/                  ← черновики ROS 2-слоя (trajectory_codec, bridge_node, urdf, limits-генератор)
 ├── workflow/n8n-training-pipeline.json  ← экспорт живого workflow (25 узлов)
 ├── docs/README_n8n.md        ← гайд по n8n-части
-├── docs/architecture.png
 └── examples/output_demo_metrics.json    ← метрики демо-прогона
 ```
 
